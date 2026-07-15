@@ -7,7 +7,7 @@ const port = process.env.PORT || 3000
 app.set('view engine', 'ejs')
 
 app.get('/', (req, res) => {
-    res.render('index', { variableName: os.hostname() })
+    res.render('index', { hostName: os.hostname() })
 })
 
 app.get('/health', (req, res) => {
