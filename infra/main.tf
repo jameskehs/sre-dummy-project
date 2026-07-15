@@ -14,6 +14,8 @@ resource "aws_subnet" "app_subnet_1" {
   cidr_block        = "10.0.1.0/24"
   availability_zone = "us-east-1a"
 
+  map_public_ip_on_launch = true
+
   tags = {
     Name    = "SRE-DUMMY-APP-SUBNET-1"
     Project = "SRE Dummy App"
@@ -24,6 +26,8 @@ resource "aws_subnet" "app_subnet_2" {
   vpc_id            = aws_vpc.app_vpc.id
   cidr_block        = "10.0.2.0/24"
   availability_zone = "us-east-1b"
+
+  map_public_ip_on_launch = true
 
   tags = {
     Name    = "SRE-DUMMY-APP-SUBNET-2"
@@ -43,6 +47,39 @@ resource "aws_lb" "app_lb" {
   tags = {
     Name    = "SRE-DUMMY-APP-LB"
     Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_lb_target_group" "app_target_group" {
+  name        = "app-target-group"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.app_vpc.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/health"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-TARGET-GROUP"
+    Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_lb_listener" "app_listener" {
+  load_balancer_arn = aws_lb.app_lb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_target_group.arn
   }
 }
 
@@ -80,16 +117,6 @@ resource "aws_vpc_security_group_egress_rule" "allow_http_egress_rule" {
   referenced_security_group_id = aws_security_group.app_instance_sg.id
 }
 
-resource "aws_security_group" "app_instance_sg" {
-  name        = "app-ec2-sg"
-  description = "Security group for the application instances"
-  vpc_id      = aws_vpc.app_vpc.id
-
-  tags = {
-    Name    = "SRE-DUMMY-APP-INSTANCE-SG"
-    Project = "SRE Dummy App"
-  }
-}
 
 resource "aws_internet_gateway" "app_igw" {
   vpc_id = aws_vpc.app_vpc.id
@@ -114,4 +141,56 @@ resource "aws_route_table_association" "public_1" {
 resource "aws_route_table_association" "public_2" {
   subnet_id      = aws_subnet.app_subnet_2.id
   route_table_id = aws_route_table.public.id
+}
+
+resource "aws_launch_template" "app_launch_template" {
+  name          = "app-launch-template"
+  instance_type = "t3.micro"
+  image_id      = "ami-0b6d9d3d33ba97d99"
+
+  vpc_security_group_ids = [aws_security_group.app_instance_sg.id]
+
+  user_data = base64encode(file("${path.module}/boot.sh"))
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-LAUNCH-TEMPLATE"
+    Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_security_group" "app_instance_sg" {
+  name        = "app-ec2-sg"
+  description = "Security group for the application instances"
+  vpc_id      = aws_vpc.app_vpc.id
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-INSTANCE-SG"
+    Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "app_instance_ingress_rule" {
+  security_group_id = aws_security_group.app_instance_sg.id
+
+  referenced_security_group_id = aws_security_group.allow_http.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3000
+  to_port                      = 3000
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-INSTANCE-INGRESS-RULE"
+    Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "app_instance_egress_rule" {
+  security_group_id = aws_security_group.app_instance_sg.id
+  
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-INSTANCE-EGRESS-RULE"
+    Project = "SRE Dummy App"
+  }
 }
