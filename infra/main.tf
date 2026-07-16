@@ -1,4 +1,3 @@
-// TODO: Create VPC with two subnets.
 resource "aws_vpc" "app_vpc" {
   cidr_block = "10.0.0.0/16"
 
@@ -8,7 +7,6 @@ resource "aws_vpc" "app_vpc" {
   }
 }
 
-// TODO: Create subnets in different availability zones
 resource "aws_subnet" "app_subnet_1" {
   vpc_id            = aws_vpc.app_vpc.id
   cidr_block        = "10.0.1.0/24"
@@ -35,8 +33,6 @@ resource "aws_subnet" "app_subnet_2" {
   }
 }
 
-// TODO: Create a load balancer to distribute traffic to 
-// instances of the application in both subnets
 resource "aws_lb" "app_lb" {
   name               = "app-lb"
   internal           = false
@@ -147,6 +143,9 @@ resource "aws_launch_template" "app_launch_template" {
   name          = "app-launch-template"
   instance_type = "t3.micro"
   image_id      = "ami-0b6d9d3d33ba97d99"
+  iam_instance_profile {
+    name = aws_iam_instance_profile.app_instance_profile.name
+  }
 
   vpc_security_group_ids = [aws_security_group.app_instance_sg.id]
 
@@ -185,12 +184,62 @@ resource "aws_vpc_security_group_ingress_rule" "app_instance_ingress_rule" {
 
 resource "aws_vpc_security_group_egress_rule" "app_instance_egress_rule" {
   security_group_id = aws_security_group.app_instance_sg.id
-  
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "-1"
+
+  cidr_ipv4   = "0.0.0.0/0"
+  ip_protocol = "-1"
 
   tags = {
     Name    = "SRE-DUMMY-APP-INSTANCE-EGRESS-RULE"
     Project = "SRE Dummy App"
   }
+}
+
+resource "aws_autoscaling_group" "app_asg" {
+  name             = "app-asg"
+  desired_capacity = 2
+  min_size         = 2
+  max_size         = 2
+
+  vpc_zone_identifier = [aws_subnet.app_subnet_1.id, aws_subnet.app_subnet_2.id]
+  target_group_arns   = [aws_lb_target_group.app_target_group.arn]
+
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+
+  launch_template {
+    id      = aws_launch_template.app_launch_template.id
+    version = "$Latest"
+  }
+}
+
+resource "aws_iam_role" "app_instance_role" {
+  name = "app-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      },
+    ]
+  })
+
+  tags = {
+    Name    = "SRE-DUMMY-APP-INSTANCE-ROLE"
+    Project = "SRE Dummy App"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "app_instance_role_policy_attachment" {
+  role       = aws_iam_role.app_instance_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "app_instance_profile" {
+  name = "app-instance-profile"
+  role = aws_iam_role.app_instance_role.name
 }
