@@ -2,34 +2,31 @@ resource "aws_vpc" "app_vpc" {
   cidr_block = "10.0.0.0/16"
 
   tags = {
-    Name    = "SRE-DUMMY-APP-VPC"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-VPC"
   }
 }
 
 resource "aws_subnet" "app_subnet_1" {
   vpc_id            = aws_vpc.app_vpc.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
+  availability_zone = data.aws_availability_zones.available.names[0]
 
   map_public_ip_on_launch = true
 
   tags = {
-    Name    = "SRE-DUMMY-APP-SUBNET-1"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-SUBNET-1"
   }
 }
 
 resource "aws_subnet" "app_subnet_2" {
   vpc_id            = aws_vpc.app_vpc.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1b"
+  availability_zone = data.aws_availability_zones.available.names[1]
 
   map_public_ip_on_launch = true
 
   tags = {
-    Name    = "SRE-DUMMY-APP-SUBNET-2"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-SUBNET-2"
   }
 }
 
@@ -41,14 +38,13 @@ resource "aws_lb" "app_lb" {
   subnets            = [aws_subnet.app_subnet_1.id, aws_subnet.app_subnet_2.id]
 
   tags = {
-    Name    = "SRE-DUMMY-APP-LB"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-LB"
   }
 }
 
 resource "aws_lb_target_group" "app_target_group" {
   name        = "app-target-group"
-  port        = 3000
+  port        = var.app_port
   protocol    = "HTTP"
   vpc_id      = aws_vpc.app_vpc.id
   target_type = "instance"
@@ -63,8 +59,7 @@ resource "aws_lb_target_group" "app_target_group" {
   }
 
   tags = {
-    Name    = "SRE-DUMMY-APP-TARGET-GROUP"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-TARGET-GROUP"
   }
 }
 
@@ -85,9 +80,7 @@ resource "aws_security_group" "allow_http" {
   vpc_id      = aws_vpc.app_vpc.id
 
   tags = {
-    Name    = "SRE-DUMMY-APP-allow_http"
-    Project = "SRE Dummy App"
-
+    Name = "SRE-DUMMY-APP-allow_http"
   }
 }
 
@@ -100,16 +93,15 @@ resource "aws_vpc_security_group_ingress_rule" "allow_http_rule" {
   to_port     = 80
 
   tags = {
-    Name    = "SRE-DUMMY-APP-allow_http"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-allow_http"
   }
 }
 
 resource "aws_vpc_security_group_egress_rule" "allow_http_egress_rule" {
   security_group_id            = aws_security_group.allow_http.id
   ip_protocol                  = "tcp"
-  from_port                    = 3000
-  to_port                      = 3000
+  from_port                    = var.app_port
+  to_port                      = var.app_port
   referenced_security_group_id = aws_security_group.app_instance_sg.id
 }
 
@@ -118,8 +110,7 @@ resource "aws_internet_gateway" "app_igw" {
   vpc_id = aws_vpc.app_vpc.id
 
   tags = {
-    Name    = "SRE-DUMMY-APP-IGW"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-IGW"
   }
 }
 
@@ -141,8 +132,8 @@ resource "aws_route_table_association" "public_2" {
 
 resource "aws_launch_template" "app_launch_template" {
   name          = "app-launch-template"
-  instance_type = "t3.micro"
-  image_id      = "ami-0b6d9d3d33ba97d99"
+  instance_type = var.instance_type
+  image_id      = data.aws_ami.ubuntu.id
   iam_instance_profile {
     name = aws_iam_instance_profile.app_instance_profile.name
   }
@@ -152,8 +143,15 @@ resource "aws_launch_template" "app_launch_template" {
   user_data = base64encode(file("${path.module}/boot.sh"))
 
   tags = {
-    Name    = "SRE-DUMMY-APP-LAUNCH-TEMPLATE"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-LAUNCH-TEMPLATE"
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = {
+      Name = "SRE-DUMMY-APP-INSTANCE"
+    }
   }
 }
 
@@ -163,8 +161,7 @@ resource "aws_security_group" "app_instance_sg" {
   vpc_id      = aws_vpc.app_vpc.id
 
   tags = {
-    Name    = "SRE-DUMMY-APP-INSTANCE-SG"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-INSTANCE-SG"
   }
 }
 
@@ -173,12 +170,11 @@ resource "aws_vpc_security_group_ingress_rule" "app_instance_ingress_rule" {
 
   referenced_security_group_id = aws_security_group.allow_http.id
   ip_protocol                  = "tcp"
-  from_port                    = 3000
-  to_port                      = 3000
+  from_port                    = var.app_port
+  to_port                      = var.app_port
 
   tags = {
-    Name    = "SRE-DUMMY-APP-INSTANCE-INGRESS-RULE"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-INSTANCE-INGRESS-RULE"
   }
 }
 
@@ -189,16 +185,15 @@ resource "aws_vpc_security_group_egress_rule" "app_instance_egress_rule" {
   ip_protocol = "-1"
 
   tags = {
-    Name    = "SRE-DUMMY-APP-INSTANCE-EGRESS-RULE"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-INSTANCE-EGRESS-RULE"
   }
 }
 
 resource "aws_autoscaling_group" "app_asg" {
   name             = "app-asg"
   desired_capacity = 2
-  min_size         = 2
-  max_size         = 2
+  min_size         = var.asg_min_size
+  max_size         = var.asg_max_size
 
   vpc_zone_identifier = [aws_subnet.app_subnet_1.id, aws_subnet.app_subnet_2.id]
   target_group_arns   = [aws_lb_target_group.app_target_group.arn]
@@ -209,6 +204,13 @@ resource "aws_autoscaling_group" "app_asg" {
   launch_template {
     id      = aws_launch_template.app_launch_template.id
     version = "$Latest"
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+    }
   }
 }
 
@@ -229,8 +231,7 @@ resource "aws_iam_role" "app_instance_role" {
   })
 
   tags = {
-    Name    = "SRE-DUMMY-APP-INSTANCE-ROLE"
-    Project = "SRE Dummy App"
+    Name = "SRE-DUMMY-APP-INSTANCE-ROLE"
   }
 }
 
@@ -242,4 +243,19 @@ resource "aws_iam_role_policy_attachment" "app_instance_role_policy_attachment" 
 resource "aws_iam_instance_profile" "app_instance_profile" {
   name = "app-instance-profile"
   role = aws_iam_role.app_instance_role.name
+}
+
+
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
+  }
 }
