@@ -21,7 +21,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project   = "SRE Dummy App"
+      Project   = "SRE Dummy App V2"
       ManagedBy = "Terraform"
     }
   }
