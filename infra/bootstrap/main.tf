@@ -36,7 +36,10 @@ resource "aws_iam_role" "app_apply_role" {
         Condition = {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-            "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:ref:refs/heads/main"
+            # The apply job runs in the `production` environment, so GitHub sets
+            # the sub claim to the environment form (not the branch ref). Branch
+            # restriction is enforced by the environment's deployment-branch rule.
+            "token.actions.githubusercontent.com:sub" = "repo:${local.github_repo}:environment:production"
           }
         }
       },
