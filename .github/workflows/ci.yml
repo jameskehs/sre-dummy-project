@@ -1,0 +1,86 @@
+name: Terraform
+
+# Plan on PRs (the gate), apply on merge to main.
+# Only fires when the Terraform under infra/ actually changes.
+on:
+  pull_request:
+    paths: ["infra/**"]
+  push:
+    branches: ["main"]
+    paths: ["infra/**"]
+
+# Required for OIDC: id-token lets the runner mint the token that
+# configure-aws-credentials exchanges for short-lived AWS creds.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: "1.15.8"
+  # The app config lives in infra/; bootstrap is applied by hand, not here.
+  WORKING_DIR: infra
+
+jobs:
+  # --- PR gate: read-only plan, assumes the plan role -------------------
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # fmt runs recursively so bootstrap/ is checked too.
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+        working-directory: .
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      # -lock=false: the plan role has no S3 write, so it cannot take the lock.
+      - name: Terraform plan
+        run: terraform plan -lock=false -no-color
+
+  # --- Merge to main: apply, assumes the apply role --------------------
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform apply
+        run: terraform apply -auto-approve
