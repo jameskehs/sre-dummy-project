@@ -12,3 +12,7 @@ data "aws_ami" "ubuntu" {
     values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-resolute-26.04-amd64-server-*"]
   }
 }
+
+data "aws_route53_zone" "app_zone" {
+  name = var.domain_name
+}

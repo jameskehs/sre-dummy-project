@@ -27,3 +27,9 @@ variable "asg_max_size" {
   type        = number
   default     = 2
 }
+
+variable "domain_name" {
+  description = "The domain name to be used for ACM certificate and Route 53 records"
+  type        = string
+  default     = "jameskehs.dev"
+}
